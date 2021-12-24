@@ -1,0 +1,853 @@
+<!--
+CS299 - Term Project
+Youtube Link : https://youtu.be/Z0RtQ9UeH9E
+Presentation Date and Time: Tuesday, November 16 · 9:05 – 9:10am
+
+Group: FFDEDE
+
+First Name: Pamica
+Last Name: Srimora
+Student ID: 6309681556
+E-mail: pamica.srim@dome.tu.ac.th
+
+First Name: Pramerasamee
+Last Name: Laiwijit
+Student ID: 6309610167
+E-mail: pramerasamee.lai@dome.tu.ac.th
+
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>CS299 Project FFDEDE</title>
+  <style type="text/css">
+  html, body { height: 100%; margin: 0; }
+  #c { width: 100%; height: 100%; display: block; }
+  #blocker {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+  }
+
+  #instructions {
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
+    text-align: center;
+    font-size: 14px;
+    cursor: pointer;
+  }
+</style>
+<!-- Chinese style font import-->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=ZCOOL+XiaoWei&display=swap');
+</style>
+
+</head>
+<body>
+  <div id="blocker">
+    <div id="instructions" style="font-family: 'ZCOOL XiaoWei', serif; color:white;">
+      <p style="font-size:100px">
+        Welcome to PAO RESTAURANT
+      </p>
+      <p style="font-size:75px">
+        Morning again,<br/>I would be great if I have a breakfast first.<br/>
+      </p>
+      <p style="font-size:50px">
+        Move: WASD<br/>
+        Look and Sit: MOUSE<br/>
+        Order Pao: Sit and Select that menu<br/>
+      </p>
+      <p style="font-size:20px">
+        By: Pramerasamee Laiwijit (6309610167), Pamica Srimora (6309681556)
+      </p>
+    </div>
+  </div>
+</body>
+
+<script type="module">  //if want to import, must add type="module"
+
+import * as THREE from 'https://threejsfundamentals.org/threejs/resources/threejs/r132/build/three.module.js';
+//Load GLTF
+import {GLTFLoader} from 'https://threejsfundamentals.org/threejs/resources/threejs/r132/examples/jsm/loaders/GLTFLoader.js';
+//Control mouse and keyboard to move and direction
+import {PointerLockControls} from 'https://threejsfundamentals.org/threejs/resources/threejs/r132/examples/jsm/controls/PointerLockControls.js'; 
+//GUI for UI interaction
+import {GUI} from 'https://threejsfundamentals.org/threejs/../3rdparty/dat.gui.module.js';
+//Load OBJ
+import {OBJLoader} from 'https://threejsfundamentals.org/threejs/resources/threejs/r132/examples/jsm/loaders/OBJLoader.js'; 
+//Load FBX
+import { FBXLoader } from 'https://threejsfundamentals.org/threejs/resources/threejs/r132/examples/jsm/loaders/FBXLoader.js'; 
+
+//Declare the parameter of scene, camera, renderer, mesh
+var scene, camera, renderer, mesh;
+
+//For movement and control
+let moveForward = false;
+let moveBackward = false;
+let moveLeft = false;
+let moveRight = false;
+
+let isSit = false;
+let orderPao = false;
+let posSit= new THREE.Vector3();
+var plate;
+
+//Raycaster to check that on ground(object or not)
+const objects = [];
+const chairs = [];
+const menu = [];
+let raycaster;
+
+let prevTime = performance.now();
+const velocity = new THREE.Vector3();
+const direction = new THREE.Vector3();
+const vertex = new THREE.Vector3();
+const color = new THREE.Color();
+
+//For audio
+var analyser, dataArray;
+var audioData = [];
+var stream = "chineseBG2.m4a";
+
+function main() {
+
+  //Create camera
+  const fov = 45;
+  const aspect = 2;  // the canvas default
+  const near = 0.1;
+  const far = 1000;
+  const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+  camera.position.set(1, 2, 8);
+
+  //Camera controls
+  const controls = new PointerLockControls( camera, document.body );
+
+  //Create scene and set background color
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xB1E1FF);
+
+  //Create raycaster
+  raycaster = new THREE.Raycaster( new THREE.Vector3(), new THREE.Vector3( 0, - 1, 0 ), -10, 10 );
+
+  //Load audio and play
+  var fftSize = 2048;
+  var audioLoader = new THREE.AudioLoader();
+  var listener = new THREE.AudioListener();
+  var audio = new THREE.Audio(listener);
+  audio.crossOrigin = "anonymous";
+  audioLoader.load(stream, function(buffer) {
+    audio.setBuffer(buffer);
+    audio.setLoop(true);
+    audio.play();
+  });
+
+  //Analysis the data for audio
+  analyser = new THREE.AudioAnalyser(audio, fftSize);
+  analyser.analyser.maxDecibels = -3;
+  analyser.analyser.minDecibels = -100;
+  dataArray = analyser.data;
+  getAudioData(dataArray);
+
+  {
+    const planeSize = 25;
+
+    const loader = new THREE.TextureLoader();
+    const texture = loader.load('stylized-grass1_albedo.png');
+    //const texture = loader.load('testbg4/morning_dn.jpg');
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.NearestFilter;
+    const repeats = planeSize / 2;
+    texture.repeat.set(repeats, repeats);
+
+    const planeGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+    const planeMat = new THREE.MeshPhongMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(planeGeo, planeMat);
+    mesh.position.y = 0.05;
+    mesh.rotation.x = Math.PI * -.5;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
+
+  //Create box as ground with texture grass
+  {
+    const boxWidth = 20;
+    const boxHeight = 0.2;
+    const boxDepth = 20;
+    const geometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+
+    const loader = new THREE.TextureLoader();
+    const texture = loader.load('grassTexture.png');
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.NearestFilter;
+    const repeats = 40 / 2;
+    texture.repeat.set(repeats, repeats);
+
+    const material = new THREE.MeshPhongMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+    });
+
+    const ground = new THREE.Mesh(geometry, material);
+    ground.receiveShadow = true;
+    scene.add(ground);
+    objects.push(ground);
+  }
+
+  //MeshStandardMaterial
+  //Rock 1
+  {
+    const radius =  1.9;  
+
+    const geometry = new THREE.IcosahedronGeometry(radius);
+
+    const loader = new THREE.TextureLoader();
+    const rockBaseColor = loader.load('/rock/eroded-layered-rockface_albedo.png');
+    const rockNormalMap = loader.load('/rock/eroded-layered-rockface_normal-dx.png');
+
+    const material = new THREE.MeshStandardMaterial({
+      map: rockBaseColor,
+      normalMap: rockNormalMap,
+    });
+
+    const rock = new THREE.Mesh(geometry, material);
+    rock.receiveShadow = true;
+    rock.position.set(9.5, 0, 9.5);
+    scene.add(rock);
+    objects.push(rock);
+  }
+
+  //Rock 2
+  {
+    const radius =  2.2;  
+
+    const geometry = new THREE.IcosahedronGeometry(radius);
+
+    const loader = new THREE.TextureLoader();
+    const rockBaseColor = loader.load('/rock/eroded-layered-rockface_albedo.png');
+    const rockNormalMap = loader.load('/rock/eroded-layered-rockface_normal-dx.png');
+
+    const material = new THREE.MeshStandardMaterial({
+      map: rockBaseColor,
+      normalMap: rockNormalMap,
+    });
+
+    const rock = new THREE.Mesh(geometry, material);
+    rock.receiveShadow = true;
+    rock.position.set(-9.5, 0, 9.5);
+    scene.add(rock);
+    objects.push(rock);
+  }
+
+  //Rock 3
+  {
+    const radius =  6.7;  
+
+    const geometry = new THREE.IcosahedronGeometry(radius);
+
+    const loader = new THREE.TextureLoader();
+    const rockBaseColor = loader.load('/rock/eroded-layered-rockface_albedo.png');
+    const rockNormalMap = loader.load('/rock/eroded-layered-rockface_normal-dx.png');
+
+    const material = new THREE.MeshStandardMaterial({
+      map: rockBaseColor,
+      normalMap: rockNormalMap,
+    });
+
+    const rock = new THREE.Mesh(geometry, material);
+    rock.receiveShadow = true;
+    rock.position.set(-9.5, 0, -9.5);
+    scene.add(rock);
+    objects.push(rock);
+  }
+
+  //Rock 4
+  {
+    const radius =  5.6;  
+
+    const geometry = new THREE.IcosahedronGeometry(radius);
+
+    const loader = new THREE.TextureLoader();
+    const rockBaseColor = loader.load('/rock/eroded-layered-rockface_albedo.png');
+    const rockNormalMap = loader.load('/rock/eroded-layered-rockface_normal-dx.png');
+
+    const material = new THREE.MeshStandardMaterial({
+      map: rockBaseColor,
+      normalMap: rockNormalMap,
+    });
+
+    const rock = new THREE.Mesh(geometry, material);
+    rock.receiveShadow = true;
+    rock.position.set(9.5, 0, -9.5);
+    scene.add(rock);
+    objects.push(rock);
+  }
+
+  //Add directional light
+  {
+    const color = 0xFFFFFF;
+    const intensity = 1;
+    const light = new THREE.DirectionalLight(color, intensity);
+    light.position.set(5, 10, 2);
+    scene.add(light);
+    scene.add(light.target);
+  }
+
+  //Create the environment box. Credit cubemap from Emil Persson, aka Humus.
+  //Source : https://opengameart.org/content/forest-skyboxes
+  {
+    const cubeTextureLoader = new THREE.CubeTextureLoader();
+    const skyboxTexture = cubeTextureLoader.load([
+        'forest-skyboxes/MountainPath/posx.jpg',
+        'forest-skyboxes/MountainPath/negx.jpg',
+        'forest-skyboxes/MountainPath/posy.jpg',
+        'forest-skyboxes/MountainPath/negy.jpg',
+        'forest-skyboxes/MountainPath/posz.jpg',
+        'forest-skyboxes/MountainPath/negz.jpg'
+    ])
+    scene.background = skyboxTexture;
+  }
+
+  //Create light
+   var spotLight1
+  { //Light #1 : Above the kitchen
+
+    spotLight1 = new THREE.SpotLight( 0xffffff, 1 );
+    spotLight1.position.set( -2.5, 4.5, 0);
+    spotLight1.angle = 1;
+    spotLight1.penumbra = 0.05;
+    spotLight1.decay = 1;
+    spotLight1.distance = 20;
+
+    spotLight1.castShadow = true;
+    scene.add( spotLight1 );
+
+    spotLight1.target.position.set( -3, 0, 0 );
+    scene.add( spotLight1.target );
+  }
+
+  var spotLight2
+  { //Light #2 : Above the table
+
+    spotLight2 = new THREE.SpotLight( 0xffffff, 1 );
+    spotLight2.position.set( 2.5, 4.5, 0);
+    spotLight2.angle = 1;
+    spotLight2.penumbra = 0.05;
+    spotLight2.decay = 1;
+    spotLight2.distance = 20;
+
+    spotLight2.castShadow = true;
+    scene.add( spotLight2 );
+
+    spotLight2.target.position.set( 5, 0, 0 );
+    scene.add( spotLight2.target );
+
+  }
+  var sunLight
+  { //Light #3 : point through window
+
+    sunLight = new THREE.SpotLight( 0xf8f2e4, 1 );
+    sunLight.position.set( 0, 4.5, -8.5);
+    sunLight.angle = 0.5;
+    sunLight.penumbra = 0.05;
+    sunLight.decay = 1;
+    sunLight.distance = 20;
+
+    sunLight.castShadow = true;
+    scene.add( sunLight );
+
+    sunLight.target.position.set( 0, 0, 0 );
+    scene.add( sunLight.target );
+
+  }
+
+
+
+  class ColorGUIHelper {
+    constructor(object, prop) {
+      this.object = object;
+      this.prop = prop;
+    }
+    get value() {
+      return `#${this.object[this.prop].getHexString()}`;
+    }
+    set value(hexString) {
+      this.object[this.prop].set(hexString);
+    }
+  }
+
+  //UI for change the color of our shop's light.
+  const gui = new GUI();
+  gui.addColor(new ColorGUIHelper(spotLight1, 'color'), 'value').name('ShopLight1');
+  gui.addColor(new ColorGUIHelper(spotLight2, 'color'), 'value').name('ShopLight2');
+
+  //Import our model Pao Restaurant
+  {
+    const gltfLoader = new GLTFLoader();
+    gltfLoader.load('Paoresteraunt7.gltf', (gltf) => {
+      const root = gltf.scene;
+
+      //Loop them to let them cast and receive shadow
+      gltf.scene.traverse( function( child ) { 
+
+        if ( child.isMesh ) {
+
+            child.castShadow = true;
+            child.receiveShadow = true;
+            objects.push(child);
+        }
+
+      } );
+
+      var chair1 = root.getObjectByName('chair1');
+      var chair2 = root.getObjectByName('chair2');
+      var chair3 = root.getObjectByName('chair3');
+      var chair4 = root.getObjectByName('chair4');
+      var chair5 = root.getObjectByName('chair5');
+      var chair6 = root.getObjectByName('chair6');
+      var chair7 = root.getObjectByName('chair7');
+      var chair8 = root.getObjectByName('chair8');
+      var chair9 = root.getObjectByName('chair9');
+      plate = root.getObjectByName('plate');
+
+      chairs.push(chair1);
+      chairs.push(chair2);
+      chairs.push(chair3);
+      chairs.push(chair4);
+      chairs.push(chair5);
+      chairs.push(chair6);
+      chairs.push(chair7);
+      chairs.push(chair8);
+      chairs.push(chair9);
+
+      root.castShadow = true;
+      root.receiveShadow  = true;
+      scene.add(root);
+      objects.push(root);
+    });
+  }
+
+  //Add character that say hi to everyone
+  const objs = [];
+  {
+      const loader = new FBXLoader();
+      loader.load('pao6.fbx', (model) => {
+        model.scale.setScalar(1);
+        model.scale.set(0.0010,0.0010,0.0010);
+        model.traverse(c => {
+          c.castShadow = true;
+        });
+
+        model.position.set(-2,0.1,1.5);
+        model.rotation.y = Math.PI / 4;
+        const mixer = new THREE.AnimationMixer(model);
+        mixer.clipAction(model.animations[0]).play();
+        scene.add(model);
+        objs.push({model, mixer});
+
+      });
+  }
+
+  //For adding Pao to scene
+  function addPao(type,name) {
+    const loader = new THREE.TextureLoader();
+    var paoNormalMap;
+    if(type == 'ori')
+    {
+      paoNormalMap = loader.load('/baoTexture/bao_texture.jpg');
+    }
+    else if(type == 'charcoal')
+    {
+      paoNormalMap = loader.load('/baoTexture/bun_coal.png');
+    }
+    else if(type == 'greentea')
+    {
+      paoNormalMap = loader.load('/baoTexture/bun_redbean.png');
+    }
+
+    const material = new THREE.MeshStandardMaterial({
+      map: paoNormalMap,
+    });
+    paoNormalMap.wrapS = THREE.RepeatWrapping;
+    paoNormalMap.wrapT = THREE.RepeatWrapping;
+
+    const objLoader = new OBJLoader();
+    objLoader.load('bun.obj', (obj) => {
+
+      obj.traverse( function( child ) { 
+
+        if ( child.isMesh ) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.material = material;
+        }
+
+      } );
+      obj.scale.set(0.1,0.1,0.1);
+      obj.position.set(plate.position.x-0.05,plate.position.y+0.01,plate.position.z+0.02);
+      obj.castShadow = true;
+      obj.receiveShadow  = true;
+      obj.name = name;
+      scene.add(obj);
+    });
+  }
+
+  {
+    //Create Menu
+    const planeSize = 0.3;
+
+    //Menu normal
+    const loader1 = new THREE.TextureLoader();
+    const texture = loader1.load('/menu/originalMenu.jpg');
+    const menuOriGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+    const menuOriMat = new THREE.MeshPhongMaterial({
+      map: texture,
+      side: THREE.DoubleSide,
+    });
+    const menuOri = new THREE.Mesh(menuOriGeo, menuOriMat);
+    menuOri.rotation.x = Math.PI * -.5;
+    menuOri.rotation.z = Math.PI / 4;
+    menuOri.position.x = 2.5;
+    menuOri.position.y = 1.18;
+    menuOri.position.z = 1.4;
+    //menuOri.receiveShadow = true;
+    menuOri.name='menuOri';
+    scene.add(menuOri);
+    menu.push(menuOri);
+
+    //Menu charcoal
+    const loader = new THREE.TextureLoader();
+    const textureCharcoal = loader.load('/menu/charcoalMenu.jpg');
+    const menuCharcoalGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+    const menuCharcoalMat = new THREE.MeshPhongMaterial({
+      map: textureCharcoal,
+      side: THREE.DoubleSide,
+    });
+    const menuCharcoal = new THREE.Mesh(menuCharcoalGeo, menuCharcoalMat);
+    menuCharcoal.rotation.x = Math.PI * -.5;
+    menuCharcoal.rotation.z = Math.PI / 4;
+    menuCharcoal.position.x = 3.1;
+    menuCharcoal.position.y = 1.18;
+    menuCharcoal.position.z = 0.8;
+    //menuCharcoal.receiveShadow = true;
+    menuCharcoal.name='menuCharcoal';
+    scene.add(menuCharcoal);
+    menu.push(menuCharcoal);
+
+    //Menu green tea
+    const textureTea = loader.load('/menu/redbeanMenu.jpg');
+    const menuGreenteaGeo = new THREE.PlaneGeometry(planeSize, planeSize);
+    const menuGreenteaMat = new THREE.MeshPhongMaterial({
+      map: textureTea,
+      side: THREE.DoubleSide,
+    });
+    const menuGreentea = new THREE.Mesh(menuGreenteaGeo, menuGreenteaMat);
+    menuGreentea.rotation.x = Math.PI * -.5;
+    menuGreentea.rotation.z = Math.PI / 4;
+    menuGreentea.position.x = 2.7;
+    menuGreentea.position.y = 1.18;
+    menuGreentea.position.z = 1;
+    //menuGreentea.receiveShadow = true;
+    menuGreentea.name='menuGreentea';
+    scene.add(menuGreentea);
+    menu.push(menuGreentea);
+  }
+
+  //Create renderer
+  renderer = new THREE.WebGLRenderer( { antialias: true } );
+  renderer.setPixelRatio( window.devicePixelRatio );
+  renderer.setSize( window.innerWidth, window.innerHeight );
+  document.body.appendChild( renderer.domElement );
+
+  // AUDIO function use in render
+  function getAudioData(data) {
+    // Split array into 3
+    var frequencyArray = splitFrenquencyArray(data, 3);
+
+    // Make average of frenquency array entries
+    for (var i = 0; i < frequencyArray.length; i++) {
+      var average = 0;
+
+      for (var j = 0; j < frequencyArray[i].length; j++) {
+        average += frequencyArray[i][j];
+      }
+      audioData[i] = average / frequencyArray[i].length;
+    }
+    return audioData;
+  }
+
+  // AUDIO function use in render
+  function splitFrenquencyArray(arr, n) {
+    var tab = Object.keys(arr).map(function(key) {
+      return arr[key];
+    });
+    var len = tab.length,
+      result = [],
+      i = 0;
+
+    while (i < len) {
+      var size = Math.ceil((len - i) / n--);
+      result.push(tab.slice(i, i + size));
+      i += size;
+    }
+
+    return result;
+  }
+
+  //Create raycaster for check if the table is the direction that mouse point too and if click, move position to chair
+  var raycasterMouse = new THREE.Raycaster();
+
+  var pointerMouse = new THREE.Vector2();
+  var offset = new THREE.Vector3();
+
+  function onPointerMove( event ) {
+    pointerMouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+    pointerMouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+  }
+
+  function onClick( event ) {
+    pointerMouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+    pointerMouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+    raycasterMouse.setFromCamera(pointerMouse,camera);
+    const mouseIntersects = raycasterMouse.intersectObjects(chairs);
+    
+    if(mouseIntersects.length >0)
+    {
+      for(let i = 0; i < mouseIntersects.length;i++)
+      {
+        camera.position.set(mouseIntersects[i].object.position.x,camera.position.y,mouseIntersects[i].object.position.z);
+
+        isSit = true;
+        posSit.x =  camera.position.x;
+        posSit.y =  camera.position.y;
+        posSit.z =  camera.position.z;
+      }
+    }
+
+    //If sitting and gonna pick the menu
+    const menuIntersects = raycasterMouse.intersectObjects(menu);
+
+    if(menuIntersects.length >0)
+    {
+      if(isSit){
+        for(let i = 0; i < menuIntersects.length;i++)
+        {
+          console.log(menuIntersects[i].object.name);
+          deletePao();
+          if(menuIntersects[i].object.name == 'menuOri')
+          {
+            addPao('ori','paoOri');
+          }
+          else if(menuIntersects[i].object.name == 'menuCharcoal')
+          {
+            addPao('charcoal','paoCharcoal');
+          }
+          else if(menuIntersects[i].object.name == 'menuGreentea')
+          {
+            addPao('greentea','paoGreentea');
+          }
+        }
+      }
+    }
+  }
+
+  //Delete Pao that exist in the scene
+  function deletePao()
+  {
+    var paoOri = scene.getObjectByName('paoOri');
+    var paoCharcoal = scene.getObjectByName('paoCharcoal');
+    var paoGreentea = scene.getObjectByName('paoGreentea');
+    scene.remove( paoOri );
+    scene.remove( paoCharcoal );
+    scene.remove( paoGreentea );
+  }
+
+  function animate(){
+
+    requestAnimationFrame( animate );
+
+    renderer.render( scene, camera );
+  }
+
+  function render(time) {
+
+    requestAnimationFrame(render);
+    //Use for audio
+    getAudioData(dataArray);
+    analyser.getFrequencyData();
+
+    //Let raycaster check that camera is on ground
+    raycaster.ray.origin.copy( controls.getObject().position );
+    raycaster.ray.origin.y -= 2;
+    const intersections = raycaster.intersectObjects( objects, false );
+    const onObject = intersections.length > 0;
+
+    //Use for moving the camera to the mouse direction
+    const delta = ( time - prevTime ) / 1000;
+
+    velocity.x -= velocity.x * 10.0 * delta;
+    velocity.z -= velocity.z * 10.0 * delta;
+
+    velocity.y -= 9.8 * 100.0 * delta; // 100.0 = mass
+
+    direction.z = Number( moveForward ) - Number( moveBackward );
+    direction.x = Number( moveRight ) - Number( moveLeft );
+    direction.normalize(); // this ensures consistent movements in all directions
+
+    if ( moveForward || moveBackward ) velocity.z -= direction.z * 90.0 * delta;
+    if ( moveLeft || moveRight ) velocity.x -= direction.x * 90.0 * delta;
+
+    //If camera is on groud, can move. Else reset position
+    if ( onObject === true ) {
+      controls.moveRight( - velocity.x * delta );
+      controls.moveForward( - velocity.z * delta );
+    }
+    else
+    {
+      camera.position.y = 2;
+      camera.position.x = 1;
+      camera.position.z = 8;
+    }
+
+    //If camera still sitting at the same position
+    if(posSit.distanceTo( camera.position ) > 0.1)
+    {
+      isSit = false;
+    }
+
+    prevTime = time;
+    renderer.render(scene, camera);
+  }
+
+  //Get item in html
+  const blocker = document.getElementById( 'blocker' );
+  const instructions = document.getElementById( 'instructions' );
+
+  //When instructions is clicked
+  instructions.addEventListener( 'click', function () {
+    //Lock the mouse and let it controls the direction of the camera
+    controls.lock();
+  }, false );
+
+  //Lock the mouse and let it controls the direction of the camera
+  controls.addEventListener( 'lock', function () {
+
+    instructions.style.display = 'none';
+    blocker.style.display = 'none';
+
+  } );
+
+  //Unlock the mouse
+  controls.addEventListener( 'unlock', function () {
+
+    blocker.style.display = 'block';
+    instructions.style.display = '';
+
+  } );
+
+  scene.add( controls.getObject() );
+
+  //Update when the key down in keyboard
+  const onKeyDown = function ( event ) {
+
+    switch ( event.code ) {
+
+      case 'ArrowUp':
+      case 'KeyW':
+        moveForward = true;
+        break;
+
+      case 'ArrowLeft':
+      case 'KeyA':
+        moveLeft = true;
+        break;
+
+      case 'ArrowDown':
+      case 'KeyS':
+        moveBackward = true;
+        break;
+
+      case 'ArrowRight':
+      case 'KeyD':
+        moveRight = true;
+        break;
+
+    }
+
+  };
+
+  //Update when the key up in keyboard
+  const onKeyUp = function ( event ) {
+
+    switch ( event.code ) {
+
+      case 'ArrowUp':
+      case 'KeyW':
+        moveForward = false;
+        break;
+
+      case 'ArrowLeft':
+      case 'KeyA':
+        moveLeft = false;
+        break;
+
+      case 'ArrowDown':
+      case 'KeyS':
+        moveBackward = false;
+        break;
+
+      case 'ArrowRight':
+      case 'KeyD':
+        moveRight = false;
+        break;
+
+    }
+
+  };
+
+  //Update when the window is resize
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  //Use clock to animate the model
+ const clock = new THREE.Clock();
+  (function animate() {
+      // animation with THREE.AnimationMixer.update(timedelta)                
+      objs.forEach(({mixer}) => {mixer.update(clock.getDelta());});
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+  })();
+  
+  //Let Event run the update function if trigger.
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+  window.addEventListener("resize", onWindowResize, false);
+  document.addEventListener( 'mousemove', onPointerMove,false );
+  document.addEventListener( 'click', onClick,false );
+
+  //render
+  requestAnimationFrame(render);
+  
+}
+
+main();
+
+</script>
+</html>
